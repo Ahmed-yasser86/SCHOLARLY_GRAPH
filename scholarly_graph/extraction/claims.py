@@ -1,71 +1,52 @@
-"""Claim extraction and concept normalization."""
+"""LLM claim extraction with the precise plan schema and JSON repair."""
 
 from __future__ import annotations
 
-import json
 import logging
-import math
 
-from scholarly_graph.domain.concepts import CANONICAL_CONCEPTS
+from scholarly_graph.extraction.normalize import ConceptNormalizer
 
 logger = logging.getLogger(__name__)
 
-EXTRACTION_SYSTEM_PROMPT = """You extract structured social-science claims.
-A claim asserts a relationship between two concepts (for example, X reduces Y).
-Only extract claims grounded in the passage. The evidence_span must be a verbatim
-substring of the input passage. Return ONLY a JSON array. Each item has keys:
-subject, relationship, object, conditions, country_scope (array), time_period,
-confidence (high|medium|low), evidence_span.
-Valid relationships: increases, decreases, associated_with, mediates, moderates,
-causes, no_significant_effect, contradicts.
+EXTRACTION_SYSTEM_PROMPT = """You extract structured social-science claims from academic passages.
+A claim is a specific assertion about the relationship between two social science concepts (X is associated with Y, X reduces Y, X mediates the relationship between Y and Z). Descriptive statistics, methodological explanations, literature review summaries, and acknowledgments are NOT claims.
+Return ONLY a valid JSON array with no preamble, no markdown fences, and no trailing commas. Each item has exactly these keys:
+- subject: canonical-style concept name from the passage
+- relationship: one of increases, decreases, associated_with, mediates, moderates, causes, no_significant_effect, contradicts
+- object: canonical-style concept name from the passage
+- conditions: qualifying conditions as stated, or null when unconditional
+- country_scope: array of country names the claim applies to, possibly empty
+- time_period: time period studied, or empty string when absent
+- confidence: one of high, medium, low
+- evidence_span: the exact verbatim sentences from the passage supporting the claim; if no verbatim passage supports the claim, omit the claim entirely.
 If there are no claims, return []."""
 
-NORMALIZATION_THRESHOLD = 0.75
 
+def _parse_json_array(text: str) -> list:
+    import json
 
-def _tokens(text: str) -> set:
-    return {t for t in "".join(ch.lower() if ch.isalnum() else " " for ch in text).split() if t}
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.strip("`").strip()
+        if stripped.lower().startswith("json"):
+            stripped = stripped[4:].strip()
+    try:
+        parsed = json.loads(stripped)
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        logger.warning("claim extraction JSON parse failed, trying json_repair")
+    try:
+        import json_repair
 
-
-def _similarity(first: str, second: str) -> float:
-    first_tokens, second_tokens = _tokens(first), _tokens(second)
-    if not first_tokens or not second_tokens:
-        return 0.0
-    overlap = len(first_tokens & second_tokens)
-    return overlap / math.sqrt(len(first_tokens) * len(second_tokens))
-
-
-class ConceptNormalizer:
-    """Embedding-free canonical-concept mapper with deterministic behavior."""
-
-    def __init__(self, threshold: float = NORMALIZATION_THRESHOLD) -> None:
-        self.threshold = threshold
-
-    def normalize(self, term: str) -> str:
-        cleaned = term.strip().lower()
-        if not cleaned:
-            return "other"
-        best = "other"
-        best_score = 0.0
-        for concept in CANONICAL_CONCEPTS:
-            if cleaned == concept:
-                logger.info("normalize %r -> %r (1.0 exact)", term, concept)
-                return concept
-            score = _similarity(cleaned, concept)
-            if score > best_score:
-                best_score = score
-                best = concept
-        if best_score >= self.threshold:
-            logger.info("normalize %r -> %r (%.3f)", term, best, best_score)
-            return best
-        logger.info("normalize %r -> other (best %.3f)", term, best_score)
-        return "other"
+        parsed = json_repair.loads(stripped)
+        return parsed if isinstance(parsed, list) else []
+    except Exception as exc:
+        logger.warning("claim extraction JSON repair failed: %s", exc)
+        return []
 
 
 def _extract_with_client(client: object, chunk_text: str, section: str) -> list:
-    prompt = (
-        f"{EXTRACTION_SYSTEM_PROMPT}\n\nSECTION: {section}\nPASSAGE:\n{chunk_text}"
-    )
+    prompt = f"SECTION: {section}\nPASSAGE:\n{chunk_text}"
     raw = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=1500,
@@ -73,13 +54,12 @@ def _extract_with_client(client: object, chunk_text: str, section: str) -> list:
         messages=[{"role": "user", "content": prompt}],
     )
     text = "".join(block.text for block in raw.content if hasattr(block, "text"))
-    logger.info("claim extraction raw preview: %s", text[:300])
-    try:
-        parsed = json.loads(text.strip())
-    except json.JSONDecodeError:
-        logger.warning("claim extraction JSON parse failed; returning []")
-        return []
-    return parsed if isinstance(parsed, list) else []
+    logger.info(
+        "claim extraction input=%d chars raw_preview=%s", len(chunk_text), text[:300]
+    )
+    parsed = _parse_json_array(text)
+    logger.info("claim extraction parsed %d candidate claims", len(parsed))
+    return parsed
 
 
 def extract_claims_from_chunk(
@@ -89,7 +69,6 @@ def extract_claims_from_chunk(
     client: object | None = None,
     normalizer: ConceptNormalizer | None = None,
 ) -> list:
-    """Extract domain Claim objects from one chunk of paper text."""
     from scholarly_graph.domain.entities import Claim, DocumentId, EvidenceSpan
 
     if client is None:
@@ -97,14 +76,14 @@ def extract_claims_from_chunk(
     normalizer = normalizer or ConceptNormalizer()
     try:
         parsed = _extract_with_client(client, chunk_text, section)
-    except Exception as exc:  # noqa: BLE001 - per-paper failure must not stop pipeline
+    except Exception as exc:
         logger.warning("claim extraction failed: %s", exc)
         return []
     claims: list = []
     for item in parsed:
         try:
             evidence_text = str(item.get("evidence_span", "")).strip()
-            if evidence_text and evidence_text not in chunk_text:
+            if not evidence_text or evidence_text not in chunk_text:
                 logger.warning("skipping claim with non-verbatim evidence span")
                 continue
             claims.append(
@@ -120,7 +99,7 @@ def extract_claims_from_chunk(
                     confidence=str(item.get("confidence", "medium") or "medium"),
                 )
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("skipping invalid claim: %s", exc)
     logger.info("extracted %d claims", len(claims))
     return claims

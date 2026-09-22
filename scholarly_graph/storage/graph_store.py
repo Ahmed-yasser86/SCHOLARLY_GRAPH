@@ -1,14 +1,21 @@
-"""File-backed graph store plus a Neo4j adapter implementing the GraphStore port."""
+"""Graph stores: Neo4j primary with Paper/Claim/Concept/Country schema."""
 
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 import pathlib
+
+logger = logging.getLogger(__name__)
+
+
+def claim_node_id(paper_id: str, subject: str, relationship: str, obj: str, evidence: str) -> str:
+    digest = hashlib.sha256(evidence.encode("utf-8")).hexdigest()[:16]
+    return f"{paper_id}::{subject}::{relationship}::{obj}::{digest}"
 
 
 class FileGraphStore:
-    """JSON-backed Paper/Claim/Country/citation graph for local use and tests."""
-
     def __init__(self, path: str = "data/graph.json") -> None:
         self.path = pathlib.Path(path)
         self.state = {"papers": {}, "claims": [], "citations": []}
@@ -26,6 +33,7 @@ class FileGraphStore:
             "year": paper.year,
             "data_countries": list(paper.data_countries),
         }
+        logger.info("saved paper node %s", paper.document_id)
         self._persist()
 
     def save_claim(self, paper_id, claim) -> None:
@@ -41,6 +49,7 @@ class FileGraphStore:
         }
         if record not in self.state["claims"]:
             self.state["claims"].append(record)
+            logger.info("saved claim %s -[%s]-> %s", claim.subject, claim.relationship, claim.obj)
             self._persist()
 
     def save_citation(self, citing_id, cited_id, role: str = "neutral") -> None:
@@ -67,8 +76,6 @@ class FileGraphStore:
 
 
 class Neo4jGraphStore:
-    """Neo4j implementation of the GraphStore port."""
-
     def __init__(self, uri: str, user: str, password: str) -> None:
         from neo4j import GraphDatabase
 
@@ -89,13 +96,13 @@ class Neo4jGraphStore:
                     "countries": list(paper.data_countries),
                 },
             )
+        logger.info("saved paper node %s", paper.document_id)
 
     def save_claim(self, paper_id, claim) -> None:
+        node_id = claim_node_id(
+            str(paper_id), claim.subject, claim.relationship, claim.obj, claim.evidence.text
+        )
         with self.driver.session() as session:
-            claim_id = (
-                f"{paper_id}::{claim.subject}::{claim.relationship}::"
-                f"{claim.obj}::{abs(hash(claim.evidence.text))}"
-            )
             session.run(
                 "MERGE (paper:Paper {id: $paper_id}) "
                 "MERGE (claim:Claim {id: $claim_id}) "
@@ -112,7 +119,7 @@ class Neo4jGraphStore:
                 "MERGE (claim)-[:STUDIED_IN]->(c)",
                 {
                     "paper_id": str(paper_id),
-                    "claim_id": claim_id,
+                    "claim_id": node_id,
                     "subject": claim.subject,
                     "relationship": claim.relationship,
                     "object": claim.obj,
@@ -122,6 +129,7 @@ class Neo4jGraphStore:
                     "countries": list(claim.country_scope),
                 },
             )
+        logger.info("saved claim node %s", node_id)
 
     def save_citation(self, citing_id, cited_id, role: str = "neutral") -> None:
         with self.driver.session() as session:
@@ -131,6 +139,17 @@ class Neo4jGraphStore:
                 "MERGE (a)-[r:CITES]->(b) SET r.role=$role",
                 {"citing": str(citing_id), "cited": str(cited_id), "role": role},
             )
+
+    def mechanism_paths(self, subject: str, obj: str, max_hops: int = 2) -> list:
+        with self.driver.session() as session:
+            result = session.run(
+                "MATCH path = (s:Concept {name: $subject})"
+                "-[:SUBJECT]-(:Claim)-[:OBJECT]-"
+                "(:Concept)-[:SUBJECT]-(:Claim)-[:OBJECT]-(o:Concept {name: $object}) "
+                "RETURN path LIMIT 50",
+                {"subject": subject, "object": obj},
+            )
+            return [record["path"] for record in result]
 
     def mechanisms_between(self, subject: str, obj: str) -> list:
         with self.driver.session() as session:

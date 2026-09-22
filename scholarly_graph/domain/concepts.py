@@ -1,6 +1,14 @@
-"""Canonical concept vocabulary for the inequality-mobility domain."""
+"""Canonical concept vocabulary for the inequality-mobility domain.
 
-CANONICAL_CONCEPTS: tuple = (
+Loaded from ``vocabulary.yaml`` so domain knowledge stays out of application
+logic. Falls back to the bundled defaults when the YAML file is absent.
+"""
+
+from __future__ import annotations
+
+import pathlib
+
+_DEFAULT_CONCEPTS: tuple = (
     "economic inequality",
     "income inequality",
     "wealth inequality",
@@ -53,7 +61,7 @@ CANONICAL_CONCEPTS: tuple = (
     "other",
 )
 
-CONCEPT_CATEGORIES: dict = {
+_DEFAULT_CATEGORIES: dict = {
     "inequality": (
         "economic inequality",
         "income inequality",
@@ -116,3 +124,26 @@ CONCEPT_CATEGORIES: dict = {
         "inheritance",
     ),
 }
+
+
+def _load_from_yaml(path: pathlib.Path) -> tuple | None:
+    try:
+        import yaml  # type: ignore
+    except ImportError:
+        return None
+    if not path.exists():
+        return None
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    concepts = data.get("concepts")
+    if not concepts:
+        return None
+    categories = data.get("categories", _DEFAULT_CATEGORIES)
+    return tuple(concepts), {k: tuple(v) for k, v in categories.items()}
+
+
+_loaded = _load_from_yaml(pathlib.Path(__file__).with_name("vocabulary.yaml"))
+if _loaded is not None:
+    CANONICAL_CONCEPTS, CONCEPT_CATEGORIES = _loaded
+else:
+    CANONICAL_CONCEPTS = _DEFAULT_CONCEPTS
+    CONCEPT_CATEGORIES = _DEFAULT_CATEGORIES

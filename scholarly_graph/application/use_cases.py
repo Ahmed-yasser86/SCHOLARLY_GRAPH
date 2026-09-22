@@ -48,13 +48,11 @@ class IngestPapersUseCase:
     ) -> IngestResult:
         import pathlib
 
-        from scholarly_graph.domain.entities import Claim, DocumentId, EvidenceSpan, Paper
-        from scholarly_graph.extraction.claims import (
-            ConceptNormalizer,
-            extract_claims_from_chunk,
-        )
+        from scholarly_graph.domain.entities import DocumentId, Paper
+        from scholarly_graph.extraction.claims import extract_claims_from_chunk
+        from scholarly_graph.extraction.normalize import ConceptNormalizer
         from scholarly_graph.ingestion.chunking import chunk_paper
-        from scholarly_graph.storage.vectors import local_embed
+        from scholarly_graph.storage.vectors import embed_text
 
         entries: list = []
         snapshot_id = self.snapshots.new_snapshot_id()
@@ -67,7 +65,7 @@ class IngestPapersUseCase:
                 year_to=year_to,
                 open_access_only=open_access_only,
             )
-        except Exception as exc:  # noqa: BLE001 - systemic failure propagates
+        except Exception as exc:
             _log(entries, "error", f"Discovery failed: {exc}")
             raise
         _log(entries, "success", f"Discovered {len(papers)} papers")
@@ -90,7 +88,7 @@ class IngestPapersUseCase:
                     data_countries=tuple(paper_dict.get("data_countries", [])),
                     snapshot_id=snapshot_id,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 _log(entries, "warning", f"Skipping paper with bad metadata: {exc}")
                 continue
             _log(entries, "info", f"Retrieved paper: {paper.title} ({paper.year})")
@@ -111,7 +109,7 @@ class IngestPapersUseCase:
             downloaded += 1
             try:
                 extraction = self.extractor.extract(destination)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 _log(entries, "warning", f"Text extraction failed: {exc}")
                 continue
             _log(entries, "info", f"Quality score: {extraction['quality']:.2f}")
@@ -126,7 +124,7 @@ class IngestPapersUseCase:
             for chunk in chunks:
                 self.vector_store.upsert(
                     chunk.chunk_id,
-                    local_embed(chunk.text),
+                    embed_text(chunk.text),
                     {
                         "text": chunk.text,
                         "section": chunk.section,
@@ -148,7 +146,8 @@ class IngestPapersUseCase:
                     claim_total += 1
             _log(entries, "success", f"Processed {paper.title}: {len(chunks)} chunks")
         manifest_path = self.snapshots.save_manifest(
-            snapshot_id, {"query": query, "papers": processed_records}
+            snapshot_id,
+            {"query": query, "papers": processed_records, "claim_count": claim_total},
         )
         _log(entries, "success", f"Snapshot manifest saved to {manifest_path}")
         return IngestResult(
@@ -164,21 +163,30 @@ class IngestPapersUseCase:
 @dataclass
 class StandardRagUseCase:
     vector_store: object
+    synthesis_client: object | None = None
 
     def run(self, question: str, limit: int = 25, filters: dict | None = None) -> dict:
-        from scholarly_graph.storage.vectors import local_embed
+        from scholarly_graph.storage.vectors import embed_text
 
-        query_vector = local_embed(question)
+        query_vector = embed_text(question)
         hits = self.vector_store.search(query_vector, limit=limit, filters=filters)
         papers = sorted({hit["payload"].get("paper", "") for hit in hits} - {""})
+        answer = ""
+        if self.synthesis_client is not None:
+            from scholarly_graph.retrieval.synthesis import synthesize_standard
+
+            answer = synthesize_standard(
+                question, hits, client=self.synthesis_client
+            )
         return {
             "mode": "standard",
             "question": question,
+            "answer": answer,
             "chunks_retrieved": len(hits),
             "papers": papers,
             "sources": hits,
             "trace": [
-                f"Embedded query with local 384-dimensional encoder",
+                "Embedded query with BAAI/bge-small-en-v1.5",
                 f"Retrieved {len(hits)} chunks from {len(papers)} papers",
                 "Synthesis grounded only in retrieved passages",
             ],
@@ -189,33 +197,43 @@ class StandardRagUseCase:
 class NetworkAwareRagUseCase:
     vector_store: object
     graph_store: object
+    synthesis_client: object | None = None
 
-    def run(self, question: str, limit: int = 25) -> dict:
-        from scholarly_graph.domain.services import (
-            decompose_query,
+    def run(self, question: str, limit: int = 25, filters: dict | None = None) -> dict:
+        from scholarly_graph.domain.evidence import (
             detect_contradictions,
             fuse_evidence,
         )
-        from scholarly_graph.storage.vectors import local_embed
+        from scholarly_graph.domain.query import decompose_query
+        from scholarly_graph.storage.vectors import embed_text
 
         structured = decompose_query(question)
-        hits = self.vector_store.search(local_embed(question), limit=limit)
+        hits = self.vector_store.search(
+            embed_text(question), limit=limit, filters=filters
+        )
         graph_claims: list = []
         if structured.subject_concept and structured.object_concept:
             graph_claims = self.graph_store.mechanisms_between(
                 structured.subject_concept, structured.object_concept
             )
-        fused = fuse_evidence(graph_claims if isinstance(graph_claims, list) and graph_claims and hasattr(graph_claims[0], "subject") else [])
-        contradictions = detect_contradictions(
-            fused.claims if fused.claims else []
-        )
+        graph_claims = [c for c in graph_claims if hasattr(c, "subject")]
+        fused = fuse_evidence(graph_claims)
+        contradictions = detect_contradictions(fused.claims)
         countries: dict = {}
         for claim in fused.claims:
             for country in getattr(claim, "country_scope", ()):
                 countries[country] = countries.get(country, 0) + 1
+        answer = ""
+        if self.synthesis_client is not None:
+            from scholarly_graph.retrieval.synthesis import synthesize_network_aware
+
+            answer = synthesize_network_aware(
+                question, fused.claims, contradictions, client=self.synthesis_client
+            )
         return {
             "mode": "network_aware",
             "question": question,
+            "answer": answer,
             "structured_query": {
                 "subject": structured.subject_concept,
                 "object": structured.object_concept,

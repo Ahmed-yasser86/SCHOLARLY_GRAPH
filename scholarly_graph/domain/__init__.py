@@ -1,20 +1,34 @@
 """Domain services: query decomposition, evidence fusion, contradiction detection."""
-from scholarly_graph.domain import ports
-from scholarly_graph.domain.services import (
+from scholarly_graph.domain import ports, query
+from scholarly_graph.domain.evidence import (
     ContradictionPair,
     FusedEvidence,
-    StructuredQuery,
+    claim_rank_score,
     detect_contradictions,
-    decompose_query,
     fuse_evidence,
 )
+from scholarly_graph.domain.ports import (
+    ClaimExtractor,
+    GraphStore,
+    PaperRepository,
+    TextExtractor,
+    VectorStore,
+)
+from scholarly_graph.domain.query import StructuredQuery, decompose_query
 
 __all__ = [
-    "ports",
+    "ClaimExtractor",
     "ContradictionPair",
     "FusedEvidence",
+    "GraphStore",
+    "PaperRepository",
     "StructuredQuery",
-    "detect_contradictions",
+    "TextExtractor",
+    "VectorStore",
+    "claim_rank_score",
     "decompose_query",
+    "detect_contradictions",
     "fuse_evidence",
+    "ports",
+    "query",
 ]
