@@ -35,6 +35,21 @@ VALID_RELATIONSHIP_TYPES = frozenset(
 
 VALID_CONFIDENCE_LEVELS = frozenset({"high", "medium", "low"})
 
+
+@dataclass(frozen=True)
+class ClaimConfidence:
+    level: str = "medium"
+
+    def __post_init__(self) -> None:
+        if self.level not in VALID_CONFIDENCE_LEVELS:
+            raise ValueError(
+                f"Unknown confidence {self.level!r}; "
+                f"expected one of {sorted(VALID_CONFIDENCE_LEVELS)}"
+            )
+
+    def __str__(self) -> str:
+        return self.level
+
 VALID_STUDY_DESIGNS = frozenset(
     {
         "rct",

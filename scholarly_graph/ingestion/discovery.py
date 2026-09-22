@@ -11,7 +11,7 @@ import json
 import logging
 import pathlib
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -161,12 +161,13 @@ class OpenAlexClient:
         pdf_url = (work.get("open_access") or {}).get("oa_url") or ""
         countries = sorted(
             {
-                institution.get("country_code", "")
+                code
                 for authorship in work.get("authorships", [])
                 for institution in (authorship.get("institutions") or [])
                 if isinstance(institution, dict)
+                for code in [institution.get("country_code", "")]
+                if code
             }
-            - {""}
         )
         return {
             "document_id": f"openalex:{openalex_id}",

@@ -51,6 +51,9 @@ class GraphStore(ABC):
     def mechanisms_between(self, subject: str, obj: str) -> list: ...
 
     @abstractmethod
+    def get_mechanism_paths(self, subject: str, obj: str) -> list: ...
+
+    @abstractmethod
     def country_subgraph(self, country: str) -> list: ...
 
 

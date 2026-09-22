@@ -503,6 +503,10 @@ def run_evaluation(standard_results: list, network_results: list) -> dict:
                 "id": question["id"],
                 "type": question["type"],
                 "standard": {
+                    "citation_accuracy": citation_accuracy(
+                        standard.get("claims", []),
+                        standard.get("evidence_spans", []),
+                    ),
                     "mechanism_coverage": mechanism_coverage(
                         standard.get("mechanisms", []),
                         question["expected_mechanisms"],
@@ -515,8 +519,16 @@ def run_evaluation(standard_results: list, network_results: list) -> dict:
                         standard.get("contradiction_found", False),
                         question["expect_contradiction"],
                     ),
+                    "answer_groundedness": answer_groundedness(
+                        standard.get("claims", []),
+                        standard.get("evidence_spans", []),
+                    ),
                 },
                 "network_aware": {
+                    "citation_accuracy": citation_accuracy(
+                        network.get("claims", []),
+                        network.get("evidence_spans", []),
+                    ),
                     "mechanism_coverage": mechanism_coverage(
                         network.get("mechanisms", []),
                         question["expected_mechanisms"],
@@ -529,7 +541,21 @@ def run_evaluation(standard_results: list, network_results: list) -> dict:
                         network.get("contradiction_found", False),
                         question["expect_contradiction"],
                     ),
+                    "answer_groundedness": answer_groundedness(
+                        network.get("claims", []),
+                        network.get("evidence_spans", []),
+                    ),
                 },
             }
         )
     return {"count": len(rows), "rows": rows}
+
+
+def write_evaluation_results(results: dict, path: str) -> str:
+    import json
+    import pathlib
+
+    target = pathlib.Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    return str(target)

@@ -273,6 +273,18 @@ class NetworkAwareRagUseCase:
 
 
 @dataclass
+class GetMechanismMapUseCase:
+    graph_store: object
+
+    def run(self, subject: str, obj: str) -> dict:
+        return {
+            "subject": subject,
+            "object": obj,
+            "paths": self.graph_store.get_mechanism_paths(subject, obj),
+        }
+
+
+@dataclass
 class CompareRagUseCase:
     standard: StandardRagUseCase
     network: NetworkAwareRagUseCase

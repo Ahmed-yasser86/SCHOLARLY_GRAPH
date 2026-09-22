@@ -345,7 +345,6 @@ def test_claim_extraction_json_repair_and_verbatim_gate():
 def test_generic_llm_client_drives_claim_extraction():
     from scholarly_graph.extraction.claims import extract_claims_from_chunk
     from scholarly_graph.extraction.normalize import ConceptNormalizer
-    from scholarly_graph.llm.client import LlmResponse
 
     chunk = "School funding increases mobility in Texas districts."
 

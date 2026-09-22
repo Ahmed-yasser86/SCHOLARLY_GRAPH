@@ -167,5 +167,10 @@ data/
 *.pdf
 snapshots/
 
+# Local agent tooling (opencode runtime state, caches, embedded git repos)
+.opencode/
+ pytest_cache/
+.pytest_cache/
+
 # Never publish planning or documentation markdown to the remote
 *.md

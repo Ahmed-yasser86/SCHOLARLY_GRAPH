@@ -66,6 +66,27 @@ class FileGraphStore:
             if claim["subject"].lower() == subject and claim["object"].lower() == obj
         ]
 
+    def get_mechanism_paths(self, subject: str, obj: str) -> list:
+        direct = self.mechanisms_between(subject, obj)
+        paths = [{"hops": 1, "claims": [claim]} for claim in direct]
+        for first_leg in self.state["claims"]:
+            if first_leg["subject"].lower() != subject.strip().lower():
+                continue
+            via = first_leg["object"].lower()
+            for second_leg in self.state["claims"]:
+                if (
+                    second_leg["subject"].lower() == via
+                    and second_leg["object"].lower() == obj.strip().lower()
+                ):
+                    paths.append(
+                        {
+                            "hops": 2,
+                            "via": first_leg["object"],
+                            "claims": [first_leg, second_leg],
+                        }
+                    )
+        return paths
+
     def country_subgraph(self, country: str) -> list:
         wanted = country.strip().lower()
         return [
@@ -150,6 +171,15 @@ class Neo4jGraphStore:
                 {"subject": subject, "object": obj},
             )
             return [record["path"] for record in result]
+
+    def get_mechanism_paths(self, subject: str, obj: str) -> list:
+        return [
+            {"hops": 1, "claims": [claim]}
+            for claim in self.mechanisms_between(subject, obj)
+        ] + [
+            {"hops": 2, "path": path}
+            for path in self.mechanism_paths(subject, obj)
+        ]
 
     def mechanisms_between(self, subject: str, obj: str) -> list:
         with self.driver.session() as session:

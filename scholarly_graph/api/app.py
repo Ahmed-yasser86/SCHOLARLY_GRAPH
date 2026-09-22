@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import time
 
@@ -18,11 +17,16 @@ import structlog
 
 from scholarly_graph.application.use_cases import (
     CompareRagUseCase,
+    GetMechanismMapUseCase,
     IngestPapersUseCase,
     NetworkAwareRagUseCase,
     StandardRagUseCase,
 )
-from scholarly_graph.evaluation.questions import EVALUATION_QUESTIONS, run_evaluation
+from scholarly_graph.evaluation.questions import (
+    EVALUATION_QUESTIONS,
+    run_evaluation,
+    write_evaluation_results,
+)
 from scholarly_graph.ingestion.discovery import SnapshotStore
 from scholarly_graph.ingestion.extractors import PdfTextExtractor
 from scholarly_graph.storage.graph_store import FileGraphStore
@@ -262,10 +266,9 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     @app.post("/graph/mechanisms")
     def graph_mechanisms(payload: MechanismRequest) -> dict:
         services = _services(cfg)
-        claims = services["graph_store"].mechanisms_between(
+        return GetMechanismMapUseCase(graph_store=services["graph_store"]).run(
             payload.subject, payload.obj
         )
-        return {"subject": payload.subject, "object": payload.obj, "claims": claims}
 
     @app.get("/graph/country/{country}")
     def graph_country(country: str) -> dict:
@@ -287,9 +290,12 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
 
     @app.post("/evaluation/run")
     def evaluation_run(payload: dict) -> dict:
-        return run_evaluation(
+        results = run_evaluation(
             payload.get("standard", []), payload.get("network_aware", [])
         )
+        output_path = payload.get("output_path", "data/evaluation_results.json")
+        write_evaluation_results(results, output_path)
+        return {**results, "output_path": output_path}
 
     @app.get("/evaluation/export")
     def evaluation_export() -> JSONResponse:

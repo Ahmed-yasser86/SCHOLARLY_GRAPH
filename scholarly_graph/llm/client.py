@@ -62,7 +62,6 @@ class LlmClient:
         return LlmResponse(text=text, model=self.config.model, input_chars=len(user))
 
     def extract_json_array(self, system: str, user: str) -> list:
-        import json
 
         from scholarly_graph.extraction.json_util import parse_json_array
 
