@@ -1,10 +1,11 @@
 """Section detection for academic papers.
 
-Recognises numbered headings, case variations, and the multi-word method /
-results variants from the plan, plus literature-review, data, empirical,
-findings, and concluding sections. Headings may carry numeric prefixes
-(``2. Methods``), trailing punctuation, or parenthetical notes, and must be a
-single line below a length cap so body text is never misclassified.
+Plan-mandated heuristic line-pattern split: numbered headings, case
+variations, and the multi-word method/results variants, plus
+literature-review, data, empirical, findings, and concluding sections.
+Headings must be a single line below a length cap so body text is never
+misclassified. GROBID was evaluated and rejected (Java service dependency);
+the plan explicitly requires this heuristic with unknown-section fallback.
 """
 
 from __future__ import annotations
@@ -41,6 +42,12 @@ _SECTION_ALIASES: dict = {
     "discussion": ("discussion",),
     "conclusion": ("conclusion", "conclusions", "concluding remarks"),
 }
+
+VERDICT = (
+    "Heuristic line-pattern section split retained: the plan mandates this "
+    "approach, GROBID needs a Java service, and academic heading variance "
+    "makes general ML segmenters less reliable here."
+)
 
 _PATTERNS: dict = {}
 for _section, _aliases in _SECTION_ALIASES.items():

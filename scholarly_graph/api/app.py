@@ -40,6 +40,10 @@ app_log = structlog.get_logger("scholarly_graph.api")
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    llm_model: str = "claude-sonnet-4-6"
+    llm_api_key: str = ""
+    llm_base_url: str = ""
+    llm_max_tokens: int = 1500
     anthropic_api_key: str = ""
     core_api_key: str = ""
     semantic_scholar_api_key: str = ""
@@ -141,12 +145,24 @@ def _services(cfg: Settings | None = None) -> dict:
     return {"vector_store": _vector_store(cfg), "graph_store": _graph_store(cfg)}
 
 
-def _claim_client(cfg: Settings):
-    if not cfg.anthropic_api_key:
-        return None
-    import anthropic
+def _llm_client(cfg: Settings):
+    from scholarly_graph.llm.client import LlmClient, LlmConfig
 
-    return anthropic.Anthropic(api_key=cfg.anthropic_api_key)
+    api_key = cfg.llm_api_key or cfg.anthropic_api_key
+    if not api_key and not cfg.llm_base_url:
+        return None
+    return LlmClient(
+        LlmConfig(
+            model=cfg.llm_model,
+            api_key=api_key,
+            base_url=cfg.llm_base_url,
+            max_tokens=cfg.llm_max_tokens,
+        )
+    )
+
+
+def _claim_client(cfg: Settings):
+    return _llm_client(cfg)
 
 
 def _ingest_use_case(cfg: Settings | None = None) -> IngestPapersUseCase:

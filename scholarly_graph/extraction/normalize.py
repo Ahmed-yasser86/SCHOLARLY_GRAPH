@@ -1,10 +1,12 @@
 """Embedding-backed concept normalization and country detection.
 
-Concept matching uses the local BAAI/bge-small-en-v1.5 sentence-transformer
-model with cosine similarity at the 0.75 threshold from the plan, with a
-RapidFuzz token-set fallback when the model cannot be loaded. Country
-detection resolves ISO names, official names, and common aliases through
-pycountry, replacing the hard-coded country list.
+Canonical subjects/objects are resolved with bge-small-en-v1.5 cosine
+similarity at the plan's 0.75 threshold (RapidFuzz token-set fallback when
+the model is unavailable). GLiNER/ReFinED-style open extractors were
+evaluated and rejected: spans still need mapping onto this project's closed
+controlled vocabulary, which is exactly the embedding-threshold step the
+plan specifies. Countries resolve through pycountry ISO data plus a small
+explicit alias table for common English variants (USA, UK, ...).
 """
 
 from __future__ import annotations

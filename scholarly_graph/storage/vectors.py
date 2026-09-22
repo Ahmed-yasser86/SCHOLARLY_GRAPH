@@ -1,4 +1,11 @@
-"""Vector retrieval: BAAI/bge-small-en-v1.5 embeddings with Qdrant payload filtering."""
+"""Vector retrieval: BAAI/bge-small-en-v1.5 embeddings with Qdrant payload filtering.
+
+bge-small-en-v1.5 is the plan-mandated local model (384-dim, no API cost);
+SPECTER-style scientific embeddings were evaluated and rejected since the
+plan fixes this model and the corpus/questions are general academic English.
+Qdrant is the plan-mandated store with payload filtering on country, year
+range, study design, and section; UUIDv5 point IDs keep chunk IDs stable.
+"""
 
 from __future__ import annotations
 

@@ -305,10 +305,12 @@ def test_fusion_deduplicates_and_ranks_results_first():
 
 
 def test_claim_extraction_json_repair_and_verbatim_gate():
-    from scholarly_graph.extraction.claims import _parse_json_array
+    from scholarly_graph.extraction.json_util import parse_json_array
 
-    assert _parse_json_array('[{"a": 1,}]') == [{"a": 1}]
-    assert _parse_json_array("not json") == []
+    assert parse_json_array('[{"a": 1,}]') == [{"a": 1}]
+    assert parse_json_array("not json") == []
+    assert parse_json_array('```json\n[{"a": 1}]\n```') == [{"a": 1}]
+    assert parse_json_array('[{"a": 1}, {"b": 2}]')[1] == {"b": 2}
 
     from scholarly_graph.extraction.claims import extract_claims_from_chunk
     from scholarly_graph.extraction.normalize import ConceptNormalizer
@@ -338,6 +340,82 @@ def test_claim_extraction_json_repair_and_verbatim_gate():
         client=FakeClient(),
         normalizer=ConceptNormalizer(),
     ) == []
+
+
+def test_generic_llm_client_drives_claim_extraction():
+    from scholarly_graph.extraction.claims import extract_claims_from_chunk
+    from scholarly_graph.extraction.normalize import ConceptNormalizer
+    from scholarly_graph.llm.client import LlmResponse
+
+    chunk = "School funding increases mobility in Texas districts."
+
+    class GenericClient:
+        def extract_json_array(self, system, user):
+            assert "SECTION" in user
+            return [
+                {
+                    "subject": "school funding",
+                    "relationship": "increases",
+                    "object": "mobility",
+                    "conditions": None,
+                    "country_scope": [],
+                    "time_period": "",
+                    "confidence": "high",
+                    "evidence_span": chunk,
+                }
+            ]
+
+    claims = extract_claims_from_chunk(
+        chunk, "results", paper_id="openalex:W1", client=GenericClient()
+    )
+    assert len(claims) == 1
+    assert claims[0].relationship == "increases"
+
+    class LegacyClient:
+        class messages:
+            @staticmethod
+            def create(**kwargs):
+                class Block:
+                    text = "not json"
+
+                class Response:
+                    content = [Block()]
+
+                return Response()
+
+    assert extract_claims_from_chunk(
+        chunk,
+        "results",
+        paper_id="openalex:W1",
+        client=LegacyClient(),
+        normalizer=ConceptNormalizer(),
+    ) == []
+
+
+def test_llm_client_model_is_configurable(monkeypatch):
+    import litellm
+
+    from scholarly_graph.llm.client import LlmClient, LlmConfig
+
+    seen = {}
+
+    class FakeMessage:
+        content = '[{"subject": "a"}]'
+
+    class FakeChoice:
+        message = FakeMessage()
+
+    class FakeRaw:
+        choices = [FakeChoice()]
+
+    def fake_completion(**kwargs):
+        seen.update(kwargs)
+        return FakeRaw()
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    client = LlmClient(LlmConfig(model="gpt-4o-mini", api_key="k"))
+    assert client.extract_json_array("sys", "user") == [{"subject": "a"}]
+    assert seen["model"] == "gpt-4o-mini"
 
 
 def test_country_detection_uses_iso_names():

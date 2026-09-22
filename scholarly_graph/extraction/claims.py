@@ -1,4 +1,4 @@
-"""LLM claim extraction with the precise plan schema and JSON repair."""
+"""LLM claim extraction with the precise plan schema over a generic client."""
 
 from __future__ import annotations
 
@@ -22,46 +22,6 @@ Return ONLY a valid JSON array with no preamble, no markdown fences, and no trai
 If there are no claims, return []."""
 
 
-def _parse_json_array(text: str) -> list:
-    import json
-
-    stripped = text.strip()
-    if stripped.startswith("```"):
-        stripped = stripped.strip("`").strip()
-        if stripped.lower().startswith("json"):
-            stripped = stripped[4:].strip()
-    try:
-        parsed = json.loads(stripped)
-        return parsed if isinstance(parsed, list) else []
-    except Exception:
-        logger.warning("claim extraction JSON parse failed, trying json_repair")
-    try:
-        import json_repair
-
-        parsed = json_repair.loads(stripped)
-        return parsed if isinstance(parsed, list) else []
-    except Exception as exc:
-        logger.warning("claim extraction JSON repair failed: %s", exc)
-        return []
-
-
-def _extract_with_client(client: object, chunk_text: str, section: str) -> list:
-    prompt = f"SECTION: {section}\nPASSAGE:\n{chunk_text}"
-    raw = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=1500,
-        system=EXTRACTION_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    text = "".join(block.text for block in raw.content if hasattr(block, "text"))
-    logger.info(
-        "claim extraction input=%d chars raw_preview=%s", len(chunk_text), text[:300]
-    )
-    parsed = _parse_json_array(text)
-    logger.info("claim extraction parsed %d candidate claims", len(parsed))
-    return parsed
-
-
 def extract_claims_from_chunk(
     chunk_text: str,
     section: str,
@@ -75,13 +35,38 @@ def extract_claims_from_chunk(
         return []
     normalizer = normalizer or ConceptNormalizer()
     try:
-        parsed = _extract_with_client(client, chunk_text, section)
+        if hasattr(client, "extract_json_array"):
+            parsed = client.extract_json_array(
+                EXTRACTION_SYSTEM_PROMPT,
+                f"SECTION: {section}\nPASSAGE:\n{chunk_text}",
+            )
+        else:
+            from scholarly_graph.extraction.json_util import parse_json_array
+
+            raw = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=1500,
+                system=EXTRACTION_SYSTEM_PROMPT,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"SECTION: {section}\nPASSAGE:\n{chunk_text}",
+                    }
+                ],
+            )
+            text = "".join(
+                block.text for block in raw.content if hasattr(block, "text")
+            )
+            parsed = parse_json_array(text)
+        logger.info("claim extraction parsed %d candidate claims", len(parsed))
     except Exception as exc:
         logger.warning("claim extraction failed: %s", exc)
         return []
     claims: list = []
     for item in parsed:
         try:
+            if not isinstance(item, dict):
+                continue
             evidence_text = str(item.get("evidence_span", "")).strip()
             if not evidence_text or evidence_text not in chunk_text:
                 logger.warning("skipping claim with non-verbatim evidence span")

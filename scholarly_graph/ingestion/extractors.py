@@ -1,4 +1,10 @@
-"""PDF text extraction: PyMuPDF primary, pdfplumber fallback, quality gate."""
+"""PDF text extraction: PyMuPDF primary, pdfplumber fallback, quality gate.
+
+PyMuPDF + pdfplumber retained per the plan: benchmarks show near-identical
+content with complementary layout strengths, and GROBID would add a Java
+service for metadata gains this pipeline does not need. The alphabetic-ratio
+quality gate below 0.4 excludes scanned/garbled PDFs from claim extraction.
+"""
 
 from __future__ import annotations
 

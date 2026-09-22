@@ -1,4 +1,4 @@
-"""Grounded answer synthesis through the Claude API."""
+"""Grounded answer synthesis through any configured chat model."""
 
 from __future__ import annotations
 
@@ -19,7 +19,10 @@ Ground EVERY statement in the provided claims and evidence spans.
 Do not add information not present in the evidence package."""
 
 
-def _call_claude(client: object, system: str, user: str) -> str:
+def _complete(client: object, system: str, user: str) -> str:
+    if hasattr(client, "complete"):
+        response = client.complete(system, user)
+        return response.text if hasattr(response, "text") else str(response)
     raw = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=1500,
@@ -37,7 +40,7 @@ def synthesize_standard(question: str, hits: list, client: object) -> str:
         f"{hit['payload'].get('year', '')}]\n{hit['payload'].get('text', '')[:1500]}"
         for hit in hits[:25]
     )
-    return _call_claude(
+    return _complete(
         client,
         STANDARD_SYNTHESIS_PROMPT,
         f"QUESTION:\n{question}\n\nPASSAGES:\n{passages}",
@@ -57,7 +60,7 @@ def synthesize_network_aware(
         f"- {p.subject}: {p.first.plain_language()} VS {p.second.plain_language()}"
         for p in contradictions
     )
-    return _call_claude(
+    return _complete(
         client,
         NETWORK_SYNTHESIS_PROMPT,
         f"QUESTION:\n{question}\n\nCLAIMS:\n{chr(10).join(lines)}\n\n"

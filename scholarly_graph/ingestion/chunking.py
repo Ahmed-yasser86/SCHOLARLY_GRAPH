@@ -1,7 +1,9 @@
 """Sentence segmentation and token-aware section chunking.
 
-Uses NLTK's Punkt sentence tokenizer and tiktoken token counts instead of
-regex splitting and character approximations.
+NLTK Punkt sentence boundaries with tiktoken token budgets, never crossing
+section boundaries. Qu et al. (NAACL 2025) found semantic chunking gains do
+not justify its cost, so fixed-size sentence windows are the defensible
+default here; each chunk carries paper/section/year metadata for filtering.
 """
 
 from __future__ import annotations
