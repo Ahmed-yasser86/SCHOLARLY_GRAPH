@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_tavily import TavilyCrawl, TavilyExtract, TavilyMap
+try:
+    from langchain_tavily import TavilyCrawl, TavilyExtract, TavilyMap
+except Exception:  # optional dependency; scholarly ingestion uses OpenAlex/CORE
+    TavilyCrawl = TavilyExtract = TavilyMap = None  # type: ignore[assignment]
 from rich.console import Console
 from rich.panel import Panel
 
@@ -12,11 +15,21 @@ from Ingestion_Pipline.infra.retry_policies import url_extraction_retry
 console = Console()
 
 
-def build_tavily_extract() -> TavilyExtract:
+def _require_tavily(name: str):
+    if TavilyCrawl is None:
+        raise RuntimeError(
+            f"Tavily {name} is unavailable. Scholarly ingestion now uses OpenAlex, "
+            "Semantic Scholar, and CORE; install langchain-tavily only for legacy use."
+        )
+
+
+def build_tavily_extract():
+    _require_tavily("extract")
     return TavilyExtract()
 
 
-def build_tavily_map(settings: IngestionSettings | None = None) -> TavilyMap:
+def build_tavily_map(settings: IngestionSettings | None = None):
+    _require_tavily("map")
     settings = settings or IngestionSettings()
     return TavilyMap(
         max_depth=settings.tavily_max_depth,
@@ -25,12 +38,13 @@ def build_tavily_map(settings: IngestionSettings | None = None) -> TavilyMap:
     )
 
 
-def build_tavily_crawl() -> TavilyCrawl:
+def build_tavily_crawl():
+    _require_tavily("crawl")
     return TavilyCrawl()
 
 
 def docs_crawling(
-    tavily_crawl: TavilyCrawl,
+    tavily_crawl,
     settings: IngestionSettings | None = None,
 ):
     settings = settings or IngestionSettings()
@@ -44,8 +58,8 @@ def docs_crawling(
 
 
 def doc_scrolling_using_tavily_langchain(
-    tavily_map: TavilyMap,
-    tavily_extract: TavilyExtract,
+    tavily_map,
+    tavily_extract,
     settings: IngestionSettings | None = None,
 ):
     settings = settings or IngestionSettings()
@@ -86,7 +100,7 @@ def doc_scrolling_using_tavily_langchain(
 
 
 def get_site_urls(
-    tavily_map: TavilyMap,
+    tavily_map,
     settings: IngestionSettings | None = None,
 ) -> list[str]:
     settings = settings or IngestionSettings()
@@ -104,7 +118,7 @@ def get_site_urls(
 
 @url_extraction_retry()
 async def extract_urls(
-    tavily_extract: TavilyExtract,
+    tavily_extract,
     urls: list[str],
     batch_num: int,
     settings: IngestionSettings | None = None,

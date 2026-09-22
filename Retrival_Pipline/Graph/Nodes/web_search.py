@@ -1,16 +1,32 @@
 from typing import Any, Dict
 from dotenv import load_dotenv
 from langchain_core.documents import Document
-from langchain_tavily import TavilySearch
 
 from Retrival_Pipline.Graph.state import GraphState
 
 load_dotenv()
-web_search_tool = TavilySearch(max_results=3)
+
+
+def _academic_search_tool():
+    try:
+        from langchain_tavily import TavilySearch
+
+        return TavilySearch(max_results=3)
+    except Exception:
+        return None
+
+
+web_search_tool = _academic_search_tool()
 
 def websearch(state: GraphState):
     question = state["question"]
-    documents = state.get("documents")  
+    documents = state.get("documents")
+
+    if web_search_tool is None:
+        raise RuntimeError(
+            "Web search is unavailable: install the optional search backend "
+            "and configure its API key before using websearch."
+        )
 
     tavily_response = web_search_tool.invoke({"query": question})
     

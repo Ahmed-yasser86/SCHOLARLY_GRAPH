@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 
 from langchain_core.documents import Document
-from langchain_tavily import TavilyExtract, TavilyMap
 from rich.console import Console
 
 from Ingestion_Pipline.config.settings import DEFAULT_URL_CHUNK_SIZE, IngestionSettings
@@ -14,7 +13,7 @@ console = Console()
 
 
 async def extract_all_batches(
-    tavily_extract: TavilyExtract,
+    tavily_extract,
     url_batches: list[list[str]],
     settings: IngestionSettings | None = None,
 ):
@@ -32,8 +31,8 @@ async def extract_all_batches(
 
 
 async def retrieve_all_docs(
-    tavily_map: TavilyMap,
-    tavily_extract: TavilyExtract,
+    tavily_map,
+    tavily_extract,
     settings: IngestionSettings | None = None,
     url_chunk_size: int = DEFAULT_URL_CHUNK_SIZE,
 ) -> list[Document]:
