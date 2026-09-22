@@ -39,13 +39,22 @@ local_embed = embed_text
 
 
 class QdrantVectorStore:
+    """Qdrant adapter driven purely by the configured service URL + API key."""
+
     def __init__(
         self, url: str, api_key: str = "", collection: str = "scholarly_graph"
     ) -> None:
         from qdrant_client import QdrantClient
 
+        if not url:
+            raise ValueError("Qdrant connection requires QDRANT_URL")
         self.collection = collection
         self.client = QdrantClient(url=url, api_key=api_key or None)
+
+    def health(self) -> dict:
+        collections = self.client.get_collections()
+        logger.info("qdrant health ok, %d collections", len(collections.collections))
+        return {"status": "ok", "collections": len(collections.collections)}
 
     def collection_exists(self, name: str) -> bool:
         exists = bool(self.client.collection_exists(name or self.collection))

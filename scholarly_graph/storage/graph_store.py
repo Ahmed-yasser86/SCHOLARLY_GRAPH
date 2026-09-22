@@ -97,10 +97,24 @@ class FileGraphStore:
 
 
 class Neo4jGraphStore:
+    """Neo4j adapter (Aura Cloud or self-hosted) driven purely by connection URI."""
+
     def __init__(self, uri: str, user: str, password: str) -> None:
         from neo4j import GraphDatabase
 
+        if not uri or not user or not password:
+            raise ValueError(
+                "Neo4j connection requires NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD"
+            )
         self.driver = GraphDatabase.driver(uri, auth=(user, password))
+
+    def verify_connectivity(self) -> dict:
+        self.driver.verify_connectivity()
+        logger.info("neo4j connectivity verified")
+        return {"status": "ok"}
+
+    def close(self) -> None:
+        self.driver.close()
 
     def save_paper(self, paper) -> None:
         with self.driver.session() as session:

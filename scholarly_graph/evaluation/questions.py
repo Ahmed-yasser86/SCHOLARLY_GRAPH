@@ -459,6 +459,14 @@ EVALUATION_QUESTIONS: list = [
 
 
 def citation_accuracy(answer_claims: list, evidence_spans: list) -> float:
+    """Plan: for each claim in the answer, verify the cited paper's corpus
+    content supports it by comparing the claim against the stored evidence
+    span. Input: answer claim strings + corpus evidence-span strings.
+    Correct (1.0 for that claim): 80-char overlap either direction, i.e. the
+    claim text and the stored span share a verbatim passage. Incorrect: no
+    shared passage, meaning the claim is unsupported by the cited content.
+    Ground truth: the evidence spans stored in the corpus for the cited
+    papers. Measured only when real claims + real spans are supplied."""
     if not answer_claims:
         return 0.0
     supported = 0
@@ -470,6 +478,12 @@ def citation_accuracy(answer_claims: list, evidence_spans: list) -> float:
 
 
 def mechanism_coverage(found: list, expected: list) -> float:
+    """Plan: compare mechanisms identified in the answer to the expected
+    mechanisms in the ground truth. Input: found mechanism names + expected
+    mechanism names. Correct: fraction of expected mechanisms present
+    (case-insensitive). Ground truth: expected_mechanisms per question.
+    Measured only against completed annotations; template values are
+    provisional until the user finishes them."""
     if not expected:
         return 1.0
     found_set = {m.strip().lower() for m in found}
@@ -478,10 +492,22 @@ def mechanism_coverage(found: list, expected: list) -> float:
 
 
 def contradiction_detection(detected: bool, expected: bool) -> float:
+    """Plan: check whether the system flagged contested claims when ground
+    truth says contestation exists. Input: detected flag + expected flag.
+    Correct (1.0): flags agree; incorrect (0.0): system missed real
+    contestation or flagged contestation where none is annotated. Ground
+    truth: expect_contradiction per question. Measured once both systems
+    have actually run on annotated questions."""
     return 1.0 if detected == expected else 0.0
 
 
 def geographic_specificity(found_countries: list, expected_countries: list) -> float:
+    """Plan: verify country attributions in the answer match the data
+    countries in the evidence. Input: found country names + expected country
+    names. Correct: fraction of expected countries present
+    (case-insensitive). Ground truth: expected_countries per question, to be
+    checked against evidence data_countries. Measured once answers carry
+    real country attributions."""
     if not expected_countries:
         return 1.0
     found_set = {c.strip().lower() for c in found_countries}
@@ -490,6 +516,10 @@ def geographic_specificity(found_countries: list, expected_countries: list) -> f
 
 
 def answer_groundedness(answer_claims: list, evidence_spans: list) -> float:
+    """Plan: fraction of claims in the synthesized answer traceable to a
+    specific corpus evidence span. Same computation as citation_accuracy by
+    definition in the plan; kept as a separate named metric so results
+    report both columns. Measured only with real answers + real spans."""
     return citation_accuracy(answer_claims, evidence_spans)
 
 
