@@ -161,3 +161,11 @@ cython_debug/
 langchain-docs/
 .DS_Store
 .chroma_db/
+
+# Scholarly Graph local runtime artefacts
+data/
+*.pdf
+snapshots/
+
+# Never publish planning or documentation markdown to the remote
+*.md
